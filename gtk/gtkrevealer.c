@@ -426,6 +426,20 @@ gtk_revealer_real_unrealize (GtkWidget *widget)
 }
 
 static void
+gtk_revealer_update_child_visibility (GtkRevealer *revealer,
+                                      GtkWidget   *child)
+{
+  GtkRevealerPrivate *priv = gtk_revealer_get_instance_private (revealer);
+  gboolean visible = priv->current_pos != 0.0 || priv->target_pos != 0.0;
+
+  /* The target makes children usable as soon as a reveal starts; the current
+   * position keeps them mapped until a hide has finished.
+   */
+  if (child != NULL && visible != gtk_widget_get_child_visible (child))
+    gtk_widget_set_child_visible (child, visible);
+}
+
+static void
 gtk_revealer_real_add (GtkContainer *container,
                        GtkWidget    *child)
 {
@@ -435,7 +449,7 @@ gtk_revealer_real_add (GtkContainer *container,
   g_return_if_fail (child != NULL);
 
   gtk_widget_set_parent_window (child, priv->bin_window);
-  gtk_widget_set_child_visible (child, priv->current_pos != 0.0);
+  gtk_revealer_update_child_visibility (revealer, child);
 
   GTK_CONTAINER_CLASS (gtk_revealer_parent_class)->add (container, child);
 }
@@ -535,23 +549,11 @@ gtk_revealer_set_position (GtkRevealer *revealer,
                            gdouble      pos)
 {
   GtkRevealerPrivate *priv = gtk_revealer_get_instance_private (revealer);
-  gboolean new_visible;
-  GtkWidget *child;
   GtkRevealerTransitionType transition;
 
   priv->current_pos = pos;
 
-  /* We check target_pos here too, because we want to ensure we set
-   * child_visible immediately when starting a reveal operation
-   * otherwise the child widgets will not be properly realized
-   * after the reveal returns.
-   */
-  new_visible = priv->current_pos != 0.0 || priv->target_pos != 0.0;
-
-  child = gtk_bin_get_child (GTK_BIN (revealer));
-  if (child != NULL &&
-      new_visible != gtk_widget_get_child_visible (child))
-    gtk_widget_set_child_visible (child, new_visible);
+  gtk_revealer_update_child_visibility (revealer, gtk_bin_get_child (GTK_BIN (revealer)));
 
   transition = effective_transition (revealer);
   if (transition == GTK_REVEALER_TRANSITION_TYPE_CROSSFADE)
@@ -604,6 +606,7 @@ gtk_revealer_start_animation (GtkRevealer *revealer,
     return;
 
   priv->target_pos = target;
+  gtk_revealer_update_child_visibility (revealer, gtk_bin_get_child (GTK_BIN (revealer)));
   g_object_notify_by_pspec (G_OBJECT (revealer), props[PROP_REVEAL_CHILD]);
 
   transition = effective_transition (revealer);
